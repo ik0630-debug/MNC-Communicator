@@ -1,0 +1,862 @@
+// FIX: Import React and ReactDOM to resolve 'Cannot find name' errors.
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+
+const { useState, useEffect, useRef } = React;
+
+const INITIAL_PRESET_MESSAGES = [
+  "5분 남았습니다 (5 mins left)",
+  "마무리 부탁드립니다 (Please wrap up)",
+  "Q&A 시간입니다 (Q&A Time)",
+];
+
+const INITIAL_FONTS = [
+  "Arial, sans-serif",
+  "'Roboto Mono', monospace",
+  "'Courier New', Courier, monospace",
+  "'Times New Roman', Times, serif",
+  "'Noto Sans KR', sans-serif"
+];
+
+// --- Helper Functions ---
+const formatTime = (totalSeconds) => {
+  if (totalSeconds < 0) totalSeconds = 0;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const paddedSeconds = String(seconds).padStart(2, '0');
+  const paddedMinutes = String(minutes).padStart(2, '0');
+  return `${paddedMinutes}:${paddedSeconds}`;
+};
+
+// --- Components ---
+
+const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMode }) => {
+  const [localStyles, setLocalStyles] = useState(initialStyles);
+  
+  const REFERENCE_WIDTH = 1920; // Reference for px <=> vw conversion
+
+  // Get current timer vw size for the active mode
+  const currentTimerVw = localStyles.timer.fontSizes[currentDisplayMode] || localStyles.timer.fontSizes.mixed;
+  
+  const [pxValues, setPxValues] = useState({
+    message: Math.round((initialStyles.message.fontSize / 100) * REFERENCE_WIDTH),
+    timer: Math.round((currentTimerVw / 100) * REFERENCE_WIDTH),
+  });
+
+  // Effect to sync px value if style changes from outside while modal is open (e.g. mode change)
+  useEffect(() => {
+    const newTimerVw = localStyles.timer.fontSizes[currentDisplayMode] || localStyles.timer.fontSizes.mixed;
+    setPxValues(prev => ({ ...prev, timer: Math.round((newTimerVw / 100) * REFERENCE_WIDTH) }));
+  }, [currentDisplayMode, localStyles.timer.fontSizes]);
+
+
+  const handleStyleChange = (group, prop, value, isNested = true) => {
+    if (isNested) {
+        setLocalStyles(prev => ({ ...prev, [group]: { ...prev[group], [prop]: value } }));
+    } else {
+        setLocalStyles(prev => ({ ...prev, [prop]: value }));
+    }
+  };
+
+  const handleTimerFontSizeChange = (vwValue) => {
+    // Only update the font size for the current display mode
+    setLocalStyles(prev => ({
+      ...prev,
+      timer: {
+        ...prev.timer,
+        fontSizes: {
+          ...prev.timer.fontSizes,
+          [currentDisplayMode]: vwValue,
+        }
+      }
+    }));
+  };
+  
+  const handlePxInputChange = (group, pxStringValue) => {
+    setPxValues(prev => ({...prev, [group]: pxStringValue}));
+
+    const parsedValue = parseInt(pxStringValue, 10);
+    if (!isNaN(parsedValue)) {
+      let vwValue = (parsedValue / REFERENCE_WIDTH) * 100;
+      if (group === 'timer') {
+        handleTimerFontSizeChange(vwValue);
+      } else {
+        handleStyleChange(group, 'fontSize', vwValue);
+      }
+    }
+  };
+
+  const handleSliderChange = (group, vwStringValue) => {
+    const vwValue = parseFloat(vwStringValue);
+    if (group === 'timer') {
+      handleTimerFontSizeChange(vwValue);
+    } else {
+      handleStyleChange(group, 'fontSize', vwValue);
+    }
+    setPxValues(prev => ({...prev, [group]: Math.round((vwValue / 100) * REFERENCE_WIDTH)}));
+  };
+
+  const handleSave = () => {
+    onSave(localStyles);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-preview-pane">
+            <h3>미리보기</h3>
+            <div className="modal-preview" style={{ backgroundColor: localStyles.backgroundColor, fontFamily: localStyles.fontFamily }}>
+                <span className="modal-preview-text" style={{ ...localStyles.message, fontSize: `${localStyles.message.fontSize}vw` }}>
+                    Message
+                </span>
+                <span className="modal-preview-text" style={{ color: localStyles.timer.color, fontSize: `${currentTimerVw}vw` }}>
+                    12:34
+                </span>
+            </div>
+        </div>
+
+        <div className="modal-settings-pane">
+            <h3>스타일 상세 설정</h3>
+            <div className="modal-controls">
+               <fieldset>
+                    <legend>공통 설정</legend>
+                     <div className="control-row">
+                        <label htmlFor="bg-color">배경 색상</label>
+                        <input id="bg-color" type="color" value={localStyles.backgroundColor} onChange={(e) => handleStyleChange(null, 'backgroundColor', e.target.value, false)} />
+                    </div>
+                    <div className="control-row">
+                        <label htmlFor="font-family">폰트</label>
+                        <select id="font-family" value={localStyles.fontFamily} onChange={(e) => handleStyleChange(null, 'fontFamily', e.target.value, false)}>
+                            {fonts.map(font => <option key={font} value={font}>{font.split(',')[0].replace(/'/g, '')}</option>)}
+                        </select>
+                    </div>
+               </fieldset>
+               
+               <fieldset>
+                    <legend>메시지 스타일</legend>
+                    <div className="control-row">
+                        <label htmlFor="message-font-color">글자 색상</label>
+                        <input id="message-font-color" type="color" value={localStyles.message.color} onChange={(e) => handleStyleChange('message', 'color', e.target.value)} />
+                    </div>
+                    <div className="control-row">
+                        <label htmlFor="message-font-size-slider">글자 크기</label>
+                         <div className="font-size-control">
+                            <input id="message-font-size-slider" type="range" min="2" max="8.4" step="0.1" value={localStyles.message.fontSize} onChange={(e) => handleSliderChange('message', e.target.value)} />
+                            <input id="message-font-size-px" className="px-input" type="number" value={pxValues.message} onChange={(e) => handlePxInputChange('message', e.target.value)} />
+                            <span>px</span>
+                        </div>
+                    </div>
+               </fieldset>
+               
+               <fieldset>
+                    <legend>타이머 스타일</legend>
+                     <div className="control-row">
+                        <label htmlFor="timer-font-color">글자 색상</label>
+                        <input id="timer-font-color" type="color" value={localStyles.timer.color} onChange={(e) => handleStyleChange('timer', 'color', e.target.value)} />
+                    </div>
+                    <div className="control-row">
+                        <label htmlFor="timer-font-size-slider">글자 크기</label>
+                        <div className="font-size-control">
+                            <input id="timer-font-size-slider" type="range" min="2" max="12" step="0.5" value={currentTimerVw} onChange={(e) => handleSliderChange('timer', e.target.value)} />
+                            <input id="timer-font-size-px" className="px-input" type="number" value={pxValues.timer} onChange={(e) => handlePxInputChange('timer', e.target.value)} />
+                            <span>px</span>
+                        </div>
+                    </div>
+               </fieldset>
+            </div>
+
+            <div className="modal-actions">
+              <button onClick={onClose}>취소</button>
+              <button className="primary" onClick={handleSave}>저장</button>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConsolePanel = (props) => {
+  const {
+      onSetTime, onStartPause, onReset, onSendMessage, onOpenSettings, isRunning,
+      displayMode, onSetDisplayMode, presetMessages, onAddPreset, onDeletePreset, onUpdatePreset,
+      onToggleBlink, isBlinking, onClearMessage, isModerator,
+      imagePresets, onAddImagePreset, onDeleteImagePreset, onSendImage
+  } = props;
+
+  const [minutes, setMinutes] = useState(60);
+  const [seconds, setSeconds] = useState(0);
+  const [customMessage, setCustomMessage] = useState("");
+  const [newPreset, setNewPreset] = useState("");
+  const [editingPresetIndex, setEditingPresetIndex] = useState(null);
+  const [editingPresetText, setEditingPresetText] = useState("");
+
+  // Image upload state
+  const fileInputRef = useRef(null);
+  const [newImage, setNewImage] = useState({ dataUrl: null, file: null });
+  const [newImagePresetName, setNewImagePresetName] = useState("");
+  const [selectedImagePresetIdx, setSelectedImagePresetIdx] = useState("");
+
+  const displayModes = isModerator
+    ? [ { key: 'message', label: '메시지' }, { key: 'mixed', label: '메시지+타이머' }, { key: 'image', label: '이미지' } ]
+    : [ { key: 'timer', label: '타이머' }, { key: 'message', label: '메시지' }, { key: 'mixed', label: '메시지+타이머' } ];
+
+  const handleAddPresetClick = () => {
+      if (newPreset.trim()) {
+          onAddPreset(newPreset.trim());
+          setNewPreset("");
+      }
+  };
+
+  const handleEditClick = (index, text) => {
+    setEditingPresetIndex(index);
+    setEditingPresetText(text);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingPresetText.trim()) {
+        onUpdatePreset(editingPresetIndex, editingPresetText.trim());
+    }
+    setEditingPresetIndex(null);
+    setEditingPresetText("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPresetIndex(null);
+    setEditingPresetText("");
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setNewImage({ dataUrl: e.target.result, file: file });
+            setNewImagePresetName(file.name.split('.').slice(0, -1).join('.'));
+        };
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAddImagePresetClick = () => {
+    if (newImage.dataUrl && newImagePresetName.trim()) {
+        onAddImagePreset({ name: newImagePresetName.trim(), dataUrl: newImage.dataUrl });
+        // Reset fields
+        setNewImage({ dataUrl: null, file: null });
+        setNewImagePresetName("");
+        if(fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+  
+  const handleSendToPreviewClick = () => {
+    if (newImage.dataUrl && newImagePresetName.trim()) {
+        const newPreset = { name: newImagePresetName.trim(), dataUrl: newImage.dataUrl };
+        onAddImagePreset(newPreset);
+        onSendImage(newPreset.dataUrl);
+        // Reset fields
+        setNewImage({ dataUrl: null, file: null });
+        setNewImagePresetName("");
+        if(fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteImagePresetClick = () => {
+      if (selectedImagePresetIdx !== "") {
+          onDeleteImagePreset(parseInt(selectedImagePresetIdx, 10));
+          setSelectedImagePresetIdx(""); // Reset selection after delete
+      }
+  };
+
+  return (
+    <div className="panel console-panel">
+      <h2>콘솔 (Console)</h2>
+      
+      {!isModerator && (
+        <div className="control-group">
+          <label>타이머 설정</label>
+          <div className="timer-controls">
+              <div className="timer-input-group">
+                  <input type="number" value={minutes} onChange={(e) => setMinutes(parseInt(e.target.value, 10) || 0)} placeholder="분" min="0" aria-label="Minutes" />
+                  <span>분</span>
+                  <input type="number" value={seconds} onChange={(e) => setSeconds(parseInt(e.target.value, 10) || 0)} placeholder="초" min="0" max="59" aria-label="Seconds" />
+                  <span>초</span>
+              </div>
+            <button className="primary" onClick={() => onSetTime(minutes, seconds)}>시간 설정</button>
+            <button className="success" onClick={onStartPause}>{isRunning ? "일시정지" : "시작"}</button>
+            <button className="danger" onClick={onReset}>초기화</button>
+          </div>
+        </div>
+      )}
+
+
+       <div className="control-group">
+        <label>송출 모드</label>
+        <div className="input-row mode-buttons">
+          {displayModes.map(mode => (
+            <button
+              key={mode.key}
+              className={displayMode === mode.key ? 'active' : ''}
+              onClick={() => onSetDisplayMode(mode.key)}
+              style={{flex:1}}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="control-group">
+        <label>메시지 전송</label>
+        <div className="preset-buttons">
+          {presetMessages.map((msg, index) => (
+            <div key={index} className={`preset-item ${editingPresetIndex === index ? 'editing' : ''}`}>
+              {editingPresetIndex === index ? (
+                <div className="preset-edit-controls">
+                    <textarea 
+                        value={editingPresetText}
+                        onChange={(e) => setEditingPresetText(e.target.value)}
+                        rows="2"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.altKey) {
+                            e.preventDefault();
+                            handleSaveEdit();
+                          }
+                        }}
+                    />
+                    <button onClick={handleSaveEdit}>저장</button>
+                    <button onClick={handleCancelEdit}>취소</button>
+                </div>
+              ) : (
+                <>
+                  <button onClick={() => onSendMessage(msg)}>{msg}</button>
+                  <button className="edit-preset-btn" onClick={() => handleEditClick(index, msg)} aria-label={`Edit preset: ${msg}`}>✏️</button>
+                  <button className="delete-preset-btn" onClick={() => onDeletePreset(index)} aria-label={`Delete preset: ${msg}`}>×</button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+         <div className="input-row">
+          <textarea 
+            value={newPreset} 
+            onChange={(e) => setNewPreset(e.target.value)} 
+            placeholder="새 프리셋 (Enter로 추가, Alt+Enter 줄바꿈)"
+            rows="2"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.altKey) {
+                e.preventDefault();
+                handleAddPresetClick();
+              }
+            }}
+          />
+          <button onClick={handleAddPresetClick}>추가</button>
+        </div>
+        <div className="input-row">
+          <textarea 
+            value={customMessage} 
+            onChange={(e) => setCustomMessage(e.target.value)} 
+            placeholder="직접 메시지 입력 (Enter로 전송, Alt+Enter 줄바꿈)" 
+            rows="2"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.altKey) {
+                e.preventDefault();
+                if (customMessage.trim()) {
+                  onSendMessage(customMessage);
+                }
+              }
+            }}
+          />
+        </div>
+        <div className="input-row">
+            <button className="primary" onClick={() => onSendMessage(customMessage)} style={{flex: 1}} disabled={!customMessage.trim()}>전송</button>
+            <button onClick={onToggleBlink} style={{flex: 1}}>{isBlinking ? "깜빡임 해제" : "깜빡임 효과"}</button>
+            <button onClick={onClearMessage} style={{flex: 1}}>메시지 지우기</button>
+        </div>
+      </div>
+        
+      <button onClick={onOpenSettings} style={{width: '100%', marginBottom: '15px'}}>스타일 상세 설정</button>
+      
+      {isModerator && (
+        <div className="control-group">
+            <label>이미지 전송</label>
+
+            <div className="input-row" style={{marginBottom: "10px"}}>
+              <select
+                value={selectedImagePresetIdx}
+                onChange={(e) => {
+                    const idxString = e.target.value;
+                    setSelectedImagePresetIdx(idxString);
+                    if (idxString !== "") {
+                      const index = parseInt(idxString, 10);
+                      onSendImage(imagePresets[index].dataUrl);
+                    }
+                }}
+                aria-label="이미지 프리셋에서 선택"
+                style={{flexGrow: 1}}
+              >
+                <option value="">프리셋에서 선택...</option>
+                {imagePresets.map((preset, index) => (
+                  <option key={index} value={index}>{preset.name}</option>
+                ))}
+              </select>
+              <button 
+                className="danger" 
+                onClick={handleDeleteImagePresetClick}
+                disabled={selectedImagePresetIdx === ""}
+                aria-label="선택한 이미지 프리셋 삭제"
+              >
+                삭제
+              </button>
+            </div>
+            
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} style={{display: 'none'}} />
+            <button onClick={() => fileInputRef.current.click()}>이미지 선택</button>
+            
+            {newImage.dataUrl && (
+                <div className="image-upload-area">
+                    <img src={newImage.dataUrl} alt="Preview" className="image-upload-preview" />
+                    <div className="input-row">
+                        <input type="text" value={newImagePresetName} onChange={(e) => setNewImagePresetName(e.target.value)} placeholder="이미지 이름" />
+                    </div>
+                    <div className="input-row">
+                        <button onClick={handleAddImagePresetClick} disabled={!newImagePresetName.trim()} style={{flex: 1}}>프리셋으로 저장</button>
+                        <button className="primary" onClick={handleSendToPreviewClick} disabled={!newImagePresetName.trim()} style={{flex: 1}}>미리보기 송출</button>
+                    </div>
+                </div>
+            )}
+
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displayMode, imageSrc }) => {
+    const showTimer = displayMode === 'timer' || displayMode === 'mixed';
+    const showMessage = (displayMode === 'message' || displayMode === 'mixed') && message;
+    const showImage = displayMode === 'image' && imageSrc;
+    const showFallbackTimer = displayMode === 'message' && !message && !imageSrc;
+    
+    const timerFontSize = displayMode === 'timer' 
+        ? styles.timer.fontSizes.timer 
+        : styles.timer.fontSizes.mixed;
+
+    const modeClassName = {
+        timer: 'timer-mode',
+        message: 'message-mode',
+        mixed: 'mixed-mode',
+        image: 'image-mode',
+    }[displayMode] || '';
+
+    const panelContent = () => {
+        if (showImage) {
+            return <img src={imageSrc} alt="송출 이미지" className="speaker-image" />;
+        }
+        return (
+            <>
+                {showMessage && (
+                    <span className={`speaker-text message-text ${isBlinking ? 'blinking' : ''}`} style={{ color: styles.message.color, fontSize: `${styles.message.fontSize}vw` }}>
+                        {message}
+                    </span>
+                )}
+                {(showTimer || showFallbackTimer) && (
+                    <span 
+                      className={`speaker-text timer-text ${displayMode === 'mixed' ? 'corner-timer' : ''}`} 
+                      style={{ 
+                        color: styles.timer.color, 
+                        fontSize: displayMode !== 'mixed' ? `${timerFontSize}vw` : undefined 
+                      }}
+                    >
+                        {formatTime(timeRemaining)}
+                    </span>
+                )}
+            </>
+        );
+    };
+
+    return (
+        <div className="panel speaker-panel">
+            {title && <h2>{title}</h2>}
+            <div className={`speaker-panel-content ${modeClassName}`} style={{ backgroundColor: styles.backgroundColor, fontFamily: styles.fontFamily }}>
+                {panelContent()}
+            </div>
+        </div>
+    );
+};
+
+
+const SelectionScreen = ({ onSelect, savedConfigs, onSave, onLoad, onDelete }) => {
+  const [configName, setConfigName] = useState("");
+  const [selectedConfig, setSelectedConfig] = useState("");
+
+  useEffect(() => {
+    // If configs are available, select the first one by default
+    if (savedConfigs.length > 0 && selectedConfig === "") {
+        setSelectedConfig(savedConfigs[0].name);
+    }
+  }, [savedConfigs, selectedConfig]);
+
+
+  const handleSaveClick = () => {
+    if (configName.trim()) {
+        onSave(configName.trim());
+        setConfigName("");
+    } else {
+        alert("저장할 설정의 이름을 입력해주세요.");
+    }
+  };
+  
+  const handleLoadClick = () => {
+    if (selectedConfig) {
+        onLoad(selectedConfig);
+        alert(`'${selectedConfig}' 설정을 불러왔습니다.`);
+    } else {
+        alert("불러올 설정을 선택해주세요.");
+    }
+  };
+  
+  const handleDeleteClick = () => {
+    if (selectedConfig && confirm(`'${selectedConfig}' 설정을 정말 삭제하시겠습니까?`)) {
+        onDelete(selectedConfig);
+        setSelectedConfig(savedConfigs.length > 1 ? savedConfigs[0].name : "");
+    }
+  };
+
+  return (
+    <div className="selection-container">
+      <div className="selection-box">
+        <h1>M&C Communicator</h1>
+        <p>어떤 화면으로 접속하시겠습니까?</p>
+        <div className="selection-grid">
+          <button onClick={() => onSelect('moderator_console')}>사회자용 콘솔</button>
+          <button onClick={() => onSelect('speaker_console')}>발표자용 콘솔</button>
+          <button onClick={() => onSelect('moderator_screen')}>사회자 화면</button>
+          <button onClick={() => onSelect('speaker_screen')}>발표자 화면</button>
+        </div>
+
+        <div className="settings-management">
+          <fieldset>
+            <legend>설정 관리</legend>
+            <div className="control-row">
+              <select 
+                value={selectedConfig} 
+                onChange={(e) => setSelectedConfig(e.target.value)}
+                aria-label="저장된 설정 목록"
+                disabled={savedConfigs.length === 0}
+              >
+                 {savedConfigs.length === 0 ? (
+                    <option>저장된 설정 없음</option>
+                 ) : (
+                    savedConfigs.map(c => <option key={c.name} value={c.name}>{c.name}</option>)
+                 )}
+              </select>
+              <div className="button-group">
+                <button onClick={handleLoadClick} disabled={savedConfigs.length === 0}>불러오기</button>
+                <button className="danger" onClick={handleDeleteClick} disabled={savedConfigs.length === 0}>삭제</button>
+              </div>
+            </div>
+            <div className="control-row">
+              <input 
+                type="text" 
+                value={configName}
+                onChange={(e) => setConfigName(e.target.value)}
+                placeholder="새 설정 이름"
+              />
+              <div className="button-group">
+                <button className="primary" onClick={handleSaveClick}>현재 설정 저장</button>
+              </div>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App Component ---
+
+const App = () => {
+  const STORAGE_KEY = 'mnc-communicator-configs';
+
+  // View State
+  const [view, setView] = useState('selection'); // 'selection', 'moderator_console', 'moderator_screen', 'speaker_console', 'speaker_screen'
+
+  // Settings State
+  const [savedConfigs, setSavedConfigs] = useState(() => {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+        console.error("Failed to parse saved configs from localStorage", error);
+        return [];
+    }
+  });
+
+  // Timer State
+  const [initialTime, setInitialTime] = useState(60 * 60);
+  const [timeRemaining, setTimeRemaining] = useState(initialTime);
+  const [isRunning, setIsRunning] = useState(false);
+  
+  // Preview State
+  const [displayMode, setDisplayMode] = useState('timer');
+  const [message, setMessage] = useState('');
+  const [isBlinking, setIsBlinking] = useState(false);
+  const [imageSrc, setImageSrc] = useState('');
+  
+  // Live State
+  const [liveDisplayMode, setLiveDisplayMode] = useState('timer');
+  const [liveMessage, setLiveMessage] = useState('');
+  const [liveIsBlinking, setLiveIsBlinking] = useState(false);
+  const [liveImageSrc, setLiveImageSrc] = useState('');
+
+  // Common State
+  const [presetMessages, setPresetMessages] = useState(INITIAL_PRESET_MESSAGES);
+  const [imagePresets, setImagePresets] = useState([]);
+  const [styles, setStyles] = useState({
+    backgroundColor: '#000000',
+    fontFamily: "Arial, sans-serif",
+    timer: {
+      color: '#FFFF00',
+      fontSizes: {
+        timer: 8.854, // Default: 170px on 1920px width
+        mixed: 4.167, // Default: 80px on 1920px width
+      },
+    },
+    message: { color: '#FFFF00', fontSize: 3.125 } // Default 60px on 1920px width
+  });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Persist configs to localStorage whenever they change
+  useEffect(() => {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(savedConfigs));
+    } catch (error) {
+        console.error("Failed to save configs to localStorage", error);
+    }
+  }, [savedConfigs]);
+
+
+  useEffect(() => {
+    let interval;
+    if (isRunning && timeRemaining > 0) {
+      interval = setInterval(() => {
+        setTimeRemaining(prev => prev - 1);
+      }, 1000);
+    } else if (isRunning && timeRemaining <= 0) {
+      setIsRunning(false);
+      setMessage("Time's Up!");
+      setDisplayMode('message');
+      setIsBlinking(true);
+    }
+    return () => clearInterval(interval);
+  }, [isRunning, timeRemaining]);
+  
+  const handleSetTime = (minutes, seconds) => {
+    const newTime = (minutes * 60) + seconds;
+    setInitialTime(newTime);
+    setTimeRemaining(newTime);
+    setIsRunning(false);
+  };
+  
+  const handleStartPause = () => {
+    if (timeRemaining > 0) {
+      setIsRunning(prev => !prev);
+    }
+  };
+  
+  const handleReset = () => {
+    setIsRunning(false);
+    setTimeRemaining(initialTime);
+    setMessage('');
+    setImageSrc('');
+    setLiveImageSrc('');
+    setIsBlinking(false);
+    setDisplayMode('timer');
+  };
+
+  const handleSendMessage = (msg) => {
+      setMessage(msg);
+      setDisplayMode(displayMode === 'timer' ? 'message' : displayMode);
+  };
+  const handleSendImage = (dataUrl) => {
+      setImageSrc(dataUrl);
+      setDisplayMode('image');
+  };
+  const handleToggleBlink = () => setIsBlinking(p => !p);
+  const handleClearMessage = () => {
+    setMessage('');
+    setImageSrc('');
+  };
+  
+  const handleAddPreset = (msg) => setPresetMessages(prev => [...prev, msg]);
+  const handleDeletePreset = (index) => setPresetMessages(prev => prev.filter((_, i) => i !== index));
+  const handleUpdatePreset = (index, newMessage) => {
+    setPresetMessages(prev => {
+        const newPresets = [...prev];
+        newPresets[index] = newMessage;
+        return newPresets;
+    });
+  };
+
+  const handleAddImagePreset = (preset) => setImagePresets(prev => [...prev, preset]);
+  const handleDeleteImagePreset = (index) => setImagePresets(prev => prev.filter((_, i) => i !== index));
+  
+  const handleSaveSettings = (newStyles) => setStyles(newStyles);
+  
+  const handleBroadcast = () => {
+    setLiveDisplayMode(displayMode);
+    setLiveMessage(message);
+    setLiveIsBlinking(isBlinking);
+    setLiveImageSrc(imageSrc);
+  };
+
+  const handleBackToSelection = () => setView('selection');
+  
+  // --- Config Management Handlers ---
+  const handleSaveConfig = (name) => {
+    const currentSettings = { styles, presetMessages, imagePresets };
+    const existingConfigIndex = savedConfigs.findIndex(c => c.name === name);
+
+    if (existingConfigIndex > -1) {
+        if (confirm(`'${name}' 설정이 이미 존재합니다. 덮어쓰시겠습니까?`)) {
+            const updatedConfigs = [...savedConfigs];
+            updatedConfigs[existingConfigIndex] = { name, settings: currentSettings };
+            setSavedConfigs(updatedConfigs);
+            alert(`'${name}' 설정을 업데이트했습니다.`);
+        }
+    } else {
+        setSavedConfigs(prev => [...prev, { name, settings: currentSettings }]);
+        alert(`'${name}' 설정을 저장했습니다.`);
+    }
+  };
+
+  const handleLoadConfig = (name) => {
+    const configToLoad = savedConfigs.find(c => c.name === name);
+    if (configToLoad) {
+        setStyles(configToLoad.settings.styles);
+        setPresetMessages(configToLoad.settings.presetMessages);
+        setImagePresets(configToLoad.settings.imagePresets);
+    }
+  };
+
+  const handleDeleteConfig = (name) => {
+    setSavedConfigs(prev => prev.filter(c => c.name !== name));
+  };
+
+
+  if (view === 'selection') {
+    return <SelectionScreen 
+              onSelect={setView} 
+              savedConfigs={savedConfigs}
+              onSave={handleSaveConfig}
+              onLoad={handleLoadConfig}
+              onDelete={handleDeleteConfig}
+           />;
+  }
+
+  const BackButton = () => <button className="back-button" onClick={handleBackToSelection}>← 선택 화면</button>;
+
+  if (view === 'moderator_console' || view === 'speaker_console') {
+    const isModerator = view === 'moderator_console';
+    const title = isModerator ? '사회자용 콘솔 (Moderator Console)' : '발표자용 콘솔 (Speaker Console)';
+    
+    return (
+      <>
+        <div className="main-header">
+          <h1>{title}</h1>
+          <BackButton />
+        </div>
+        <div className="app-container">
+          <ConsolePanel 
+            isModerator={isModerator}
+            onSetTime={handleSetTime}
+            onStartPause={handleStartPause}
+            onReset={handleReset}
+            onSendMessage={handleSendMessage}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            isRunning={isRunning}
+            displayMode={displayMode}
+            onSetDisplayMode={setDisplayMode}
+            presetMessages={presetMessages}
+            onAddPreset={handleAddPreset}
+            onDeletePreset={handleDeletePreset}
+            onUpdatePreset={handleUpdatePreset}
+            onToggleBlink={handleToggleBlink}
+            isBlinking={isBlinking}
+            onClearMessage={handleClearMessage}
+            imagePresets={imagePresets}
+            onAddImagePreset={handleAddImagePreset}
+            onDeleteImagePreset={handleDeleteImagePreset}
+            onSendImage={handleSendImage}
+          />
+          <div className="speaker-section">
+              <SpeakerPanel 
+                title="미리보기 (Preview)"
+                timeRemaining={timeRemaining}
+                message={message}
+                isBlinking={isBlinking}
+                styles={styles}
+                displayMode={displayMode}
+                imageSrc={imageSrc}
+              />
+              <div className="broadcast-controls">
+                  <button className="broadcast-button" onClick={handleBroadcast}>송출</button>
+              </div>
+               <SpeakerPanel 
+                title="송출 화면 (Live View)"
+                timeRemaining={timeRemaining}
+                message={liveMessage}
+                isBlinking={liveIsBlinking}
+                styles={styles}
+                displayMode={liveDisplayMode}
+                imageSrc={liveImageSrc}
+              />
+          </div>
+        </div>
+        {isSettingsOpen && (
+          <SettingsModal 
+            initialStyles={styles}
+            onSave={handleSaveSettings}
+            onClose={() => setIsSettingsOpen(false)}
+            fonts={INITIAL_FONTS}
+            currentDisplayMode={displayMode}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (view === 'moderator_screen' || view === 'speaker_screen') {
+    return (
+      <div className="fullscreen-view">
+        <button className="fullscreen-close-button" onClick={handleBackToSelection} aria-label="선택 화면으로 돌아가기">&times;</button>
+        {/* FIX: The 'SpeakerPanel' component requires a 'title' prop, which was missing. 
+            An empty string is provided as no title is rendered in this fullscreen view. */}
+        <SpeakerPanel
+          title=""
+          timeRemaining={timeRemaining}
+          message={liveMessage}
+          isBlinking={liveIsBlinking}
+          styles={styles}
+          displayMode={liveDisplayMode}
+          imageSrc={liveImageSrc}
+        />
+      </div>
+    );
+  }
+
+  // FIX: The fallback call to 'SelectionScreen' was missing required props.
+  // Added the missing props to ensure the component receives all necessary data.
+  return <SelectionScreen 
+            onSelect={setView}
+            savedConfigs={savedConfigs}
+            onSave={handleSaveConfig}
+            onLoad={handleLoadConfig}
+            onDelete={handleDeleteConfig}
+         />;
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
