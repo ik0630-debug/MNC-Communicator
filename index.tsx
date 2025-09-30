@@ -31,7 +31,7 @@ const formatTime = (totalSeconds) => {
 
 // --- Components ---
 
-const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMode }) => {
+const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMode, isModerator }) => {
   const [localStyles, setLocalStyles] = useState(initialStyles);
   
   const REFERENCE_WIDTH = 1920; // Reference for px <=> vw conversion
@@ -108,10 +108,10 @@ const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMo
         <div className="modal-preview-pane">
             <h3>미리보기</h3>
             <div className="modal-preview" style={{ backgroundColor: localStyles.backgroundColor, fontFamily: localStyles.fontFamily }}>
-                <span className="modal-preview-text" style={{ ...localStyles.message, fontSize: `${localStyles.message.fontSize}vw` }}>
+                <span className="modal-preview-text" style={{ ...localStyles.message, fontSize: `${localStyles.message.fontSize}cqw` }}>
                     Message
                 </span>
-                <span className="modal-preview-text" style={{ color: localStyles.timer.color, fontSize: `${currentTimerVw}vw` }}>
+                <span className="modal-preview-text" style={{ color: localStyles.timer.color, fontSize: `${currentTimerVw}cqw` }}>
                     12:34
                 </span>
             </div>
@@ -143,28 +143,53 @@ const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMo
                     <div className="control-row">
                         <label htmlFor="message-font-size-slider">글자 크기</label>
                          <div className="font-size-control">
-                            <input id="message-font-size-slider" type="range" min="2" max="8.4" step="0.1" value={localStyles.message.fontSize} onChange={(e) => handleSliderChange('message', e.target.value)} />
+                            <input id="message-font-size-slider" type="range" min="2" max="52" step="0.5" value={localStyles.message.fontSize} onChange={(e) => handleSliderChange('message', e.target.value)} />
                             <input id="message-font-size-px" className="px-input" type="number" value={pxValues.message} onChange={(e) => handlePxInputChange('message', e.target.value)} />
                             <span>px</span>
                         </div>
                     </div>
                </fieldset>
                
-               <fieldset>
-                    <legend>타이머 스타일</legend>
-                     <div className="control-row">
-                        <label htmlFor="timer-font-color">글자 색상</label>
-                        <input id="timer-font-color" type="color" value={localStyles.timer.color} onChange={(e) => handleStyleChange('timer', 'color', e.target.value)} />
-                    </div>
-                    <div className="control-row">
-                        <label htmlFor="timer-font-size-slider">글자 크기</label>
-                        <div className="font-size-control">
-                            <input id="timer-font-size-slider" type="range" min="2" max="12" step="0.5" value={currentTimerVw} onChange={(e) => handleSliderChange('timer', e.target.value)} />
-                            <input id="timer-font-size-px" className="px-input" type="number" value={pxValues.timer} onChange={(e) => handlePxInputChange('timer', e.target.value)} />
-                            <span>px</span>
-                        </div>
-                    </div>
-               </fieldset>
+               {!isModerator && (
+                 <fieldset>
+                      <legend>타이머 스타일</legend>
+                       <div className="control-row">
+                          <label htmlFor="timer-font-color">글자 색상</label>
+                          <input id="timer-font-color" type="color" value={localStyles.timer.color} onChange={(e) => handleStyleChange('timer', 'color', e.target.value)} />
+                      </div>
+                      <div className="control-row">
+                          <label htmlFor="timer-font-size-slider">글자 크기</label>
+                          <div className="font-size-control">
+                              <input id="timer-font-size-slider" type="range" min="2" max="52" step="0.5" value={currentTimerVw} onChange={(e) => handleSliderChange('timer', e.target.value)} />
+                              <input id="timer-font-size-px" className="px-input" type="number" value={pxValues.timer} onChange={(e) => handlePxInputChange('timer', e.target.value)} />
+                              <span>px</span>
+                          </div>
+                      </div>
+                 </fieldset>
+               )}
+
+               {isModerator && (
+                <fieldset>
+                  <legend>이미지 스타일</legend>
+                  <div className="control-row">
+                      <label>기본 이미지 맞춤</label>
+                      <div className="image-fit-options">
+                        <label>
+                            <input type="radio" name="imageFitDefault" value="contain"
+                                  checked={localStyles.image?.fit === 'contain'}
+                                  onChange={(e) => handleStyleChange('image', 'fit', e.target.value)} />
+                            <span>한 화면에 보이기</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="imageFitDefault" value="width"
+                                  checked={localStyles.image?.fit === 'width'}
+                                  onChange={(e) => handleStyleChange('image', 'fit', e.target.value)} />
+                            <span>가로 폭 맞춤</span>
+                        </label>
+                      </div>
+                  </div>
+                </fieldset>
+               )}
             </div>
 
             <div className="modal-actions">
@@ -182,7 +207,7 @@ const ConsolePanel = (props) => {
       onSetTime, onStartPause, onReset, onSendMessage, onOpenSettings, isRunning,
       displayMode, onSetDisplayMode, presetMessages, onAddPreset, onDeletePreset, onUpdatePreset,
       onToggleBlink, isBlinking, onClearMessage, isModerator,
-      imagePresets, onAddImagePreset, onDeleteImagePreset, onSendImage
+      imagePresets, onAddImagePreset, onDeleteImagePreset, onSendImage, styles
   } = props;
 
   const [minutes, setMinutes] = useState(60);
@@ -197,6 +222,13 @@ const ConsolePanel = (props) => {
   const [newImage, setNewImage] = useState({ dataUrl: null, file: null });
   const [newImagePresetName, setNewImagePresetName] = useState("");
   const [selectedImagePresetIdx, setSelectedImagePresetIdx] = useState("");
+  const [imageFit, setImageFit] = useState(styles.image?.fit || 'contain');
+
+  useEffect(() => {
+    if (styles.image?.fit) {
+        setImageFit(styles.image.fit);
+    }
+  }, [styles.image?.fit]);
 
   const displayModes = isModerator
     ? [ { key: 'message', label: '메시지' }, { key: 'mixed', label: '메시지+타이머' }, { key: 'image', label: '이미지' } ]
@@ -241,7 +273,7 @@ const ConsolePanel = (props) => {
 
   const handleAddImagePresetClick = () => {
     if (newImage.dataUrl && newImagePresetName.trim()) {
-        onAddImagePreset({ name: newImagePresetName.trim(), dataUrl: newImage.dataUrl });
+        onAddImagePreset({ name: newImagePresetName.trim(), dataUrl: newImage.dataUrl, fit: imageFit });
         // Reset fields
         setNewImage({ dataUrl: null, file: null });
         setNewImagePresetName("");
@@ -251,9 +283,9 @@ const ConsolePanel = (props) => {
   
   const handleSendToPreviewClick = () => {
     if (newImage.dataUrl && newImagePresetName.trim()) {
-        const newPreset = { name: newImagePresetName.trim(), dataUrl: newImage.dataUrl };
+        const newPreset = { name: newImagePresetName.trim(), dataUrl: newImage.dataUrl, fit: imageFit };
         onAddImagePreset(newPreset);
-        onSendImage(newPreset.dataUrl);
+        onSendImage(newPreset.dataUrl, newPreset.fit);
         // Reset fields
         setNewImage({ dataUrl: null, file: null });
         setNewImagePresetName("");
@@ -390,7 +422,8 @@ const ConsolePanel = (props) => {
                     setSelectedImagePresetIdx(idxString);
                     if (idxString !== "") {
                       const index = parseInt(idxString, 10);
-                      onSendImage(imagePresets[index].dataUrl);
+                      const preset = imagePresets[index];
+                      onSendImage(preset.dataUrl, preset.fit || 'contain');
                     }
                 }}
                 aria-label="이미지 프리셋에서 선택"
@@ -420,6 +453,19 @@ const ConsolePanel = (props) => {
                     <div className="input-row">
                         <input type="text" value={newImagePresetName} onChange={(e) => setNewImagePresetName(e.target.value)} placeholder="이미지 이름" />
                     </div>
+                    <div className="control-row">
+                      <label>이미지 맞춤</label>
+                      <div className="image-fit-options">
+                        <label>
+                          <input type="radio" name="imageFit" value="contain" checked={imageFit === 'contain'} onChange={(e) => setImageFit(e.target.value)} />
+                          <span>한 화면에 보이기</span>
+                        </label>
+                        <label>
+                          <input type="radio" name="imageFit" value="width" checked={imageFit === 'width'} onChange={(e) => setImageFit(e.target.value)} />
+                          <span>가로 폭 맞춤</span>
+                        </label>
+                      </div>
+                    </div>
                     <div className="input-row">
                         <button onClick={handleAddImagePresetClick} disabled={!newImagePresetName.trim()} style={{flex: 1}}>프리셋으로 저장</button>
                         <button className="primary" onClick={handleSendToPreviewClick} disabled={!newImagePresetName.trim()} style={{flex: 1}}>미리보기 송출</button>
@@ -433,11 +479,12 @@ const ConsolePanel = (props) => {
   );
 };
 
-const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displayMode, imageSrc }) => {
+const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displayMode, imageSrc, imageFit }) => {
     const showTimer = displayMode === 'timer' || displayMode === 'mixed';
     const showMessage = (displayMode === 'message' || displayMode === 'mixed') && message;
     const showImage = displayMode === 'image' && imageSrc;
     const showFallbackTimer = displayMode === 'message' && !message && !imageSrc;
+    const isScrollableImage = showImage && imageFit === 'width';
     
     const timerFontSize = displayMode === 'timer' 
         ? styles.timer.fontSizes.timer 
@@ -452,12 +499,17 @@ const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displ
 
     const panelContent = () => {
         if (showImage) {
-            return <img src={imageSrc} alt="송출 이미지" className="speaker-image" />;
+             const imageStyle = {
+                width: '100%',
+                height: isScrollableImage ? 'auto' : '100%',
+                objectFit: isScrollableImage ? 'initial' : 'contain',
+            };
+            return <img src={imageSrc} alt="송출 이미지" className="speaker-image" style={imageStyle} />;
         }
         return (
             <>
                 {showMessage && (
-                    <span className={`speaker-text message-text ${isBlinking ? 'blinking' : ''}`} style={{ color: styles.message.color, fontSize: `${styles.message.fontSize}vw` }}>
+                    <span className={`speaker-text message-text ${isBlinking ? 'blinking' : ''}`} style={{ color: styles.message.color, fontSize: `${styles.message.fontSize}cqw` }}>
                         {message}
                     </span>
                 )}
@@ -466,7 +518,7 @@ const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displ
                       className={`speaker-text timer-text ${displayMode === 'mixed' ? 'corner-timer' : ''}`} 
                       style={{ 
                         color: styles.timer.color, 
-                        fontSize: displayMode !== 'mixed' ? `${timerFontSize}vw` : undefined 
+                        fontSize: `${timerFontSize}cqw`
                       }}
                     >
                         {formatTime(timeRemaining)}
@@ -479,7 +531,7 @@ const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displ
     return (
         <div className="panel speaker-panel">
             {title && <h2>{title}</h2>}
-            <div className={`speaker-panel-content ${modeClassName}`} style={{ backgroundColor: styles.backgroundColor, fontFamily: styles.fontFamily }}>
+            <div className={`speaker-panel-content ${modeClassName} ${isScrollableImage ? 'scrollable' : ''}`} style={{ backgroundColor: styles.backgroundColor, fontFamily: styles.fontFamily }}>
                 {panelContent()}
             </div>
         </div>
@@ -604,12 +656,14 @@ const App = () => {
   const [message, setMessage] = useState('');
   const [isBlinking, setIsBlinking] = useState(false);
   const [imageSrc, setImageSrc] = useState('');
+  const [imageFit, setImageFit] = useState('contain');
   
   // Live State
   const [liveDisplayMode, setLiveDisplayMode] = useState('timer');
   const [liveMessage, setLiveMessage] = useState('');
   const [liveIsBlinking, setLiveIsBlinking] = useState(false);
   const [liveImageSrc, setLiveImageSrc] = useState('');
+  const [liveImageFit, setLiveImageFit] = useState('contain');
 
   // Common State
   const [presetMessages, setPresetMessages] = useState(INITIAL_PRESET_MESSAGES);
@@ -620,11 +674,12 @@ const App = () => {
     timer: {
       color: '#FFFF00',
       fontSizes: {
-        timer: 8.854, // Default: 170px on 1920px width
-        mixed: 4.167, // Default: 80px on 1920px width
+        timer: 31.25, // Default: 600px on 1920px width
+        mixed: 7.81, // Default: 150px on 1920px width
       },
     },
-    message: { color: '#FFFF00', fontSize: 3.125 } // Default 60px on 1920px width
+    message: { color: '#FFFF00', fontSize: 7.81 }, // Default 150px on 1920px width
+    image: { fit: 'contain' },
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
@@ -671,7 +726,9 @@ const App = () => {
     setTimeRemaining(initialTime);
     setMessage('');
     setImageSrc('');
+    setImageFit('contain');
     setLiveImageSrc('');
+    setLiveImageFit('contain');
     setIsBlinking(false);
     setDisplayMode('timer');
   };
@@ -680,8 +737,9 @@ const App = () => {
       setMessage(msg);
       setDisplayMode(displayMode === 'timer' ? 'message' : displayMode);
   };
-  const handleSendImage = (dataUrl) => {
+  const handleSendImage = (dataUrl, fit = 'contain') => {
       setImageSrc(dataUrl);
+      setImageFit(fit);
       setDisplayMode('image');
   };
   const handleToggleBlink = () => setIsBlinking(p => !p);
@@ -710,6 +768,7 @@ const App = () => {
     setLiveMessage(message);
     setLiveIsBlinking(isBlinking);
     setLiveImageSrc(imageSrc);
+    setLiveImageFit(imageFit);
   };
 
   const handleBackToSelection = () => setView('selection');
@@ -735,9 +794,15 @@ const App = () => {
   const handleLoadConfig = (name) => {
     const configToLoad = savedConfigs.find(c => c.name === name);
     if (configToLoad) {
-        setStyles(configToLoad.settings.styles);
-        setPresetMessages(configToLoad.settings.presetMessages);
-        setImagePresets(configToLoad.settings.imagePresets);
+        // Ensure backward compatibility with old configs
+        const loadedStyles = {
+            ...styles,
+            ...configToLoad.settings.styles,
+            image: { ...styles.image, ...configToLoad.settings.styles?.image },
+        };
+        setStyles(loadedStyles);
+        setPresetMessages(configToLoad.settings.presetMessages || []);
+        setImagePresets(configToLoad.settings.imagePresets || []);
     }
   };
 
@@ -790,6 +855,7 @@ const App = () => {
             onAddImagePreset={handleAddImagePreset}
             onDeleteImagePreset={handleDeleteImagePreset}
             onSendImage={handleSendImage}
+            styles={styles}
           />
           <div className="speaker-section">
               <SpeakerPanel 
@@ -800,6 +866,7 @@ const App = () => {
                 styles={styles}
                 displayMode={displayMode}
                 imageSrc={imageSrc}
+                imageFit={imageFit}
               />
               <div className="broadcast-controls">
                   <button className="broadcast-button" onClick={handleBroadcast}>송출</button>
@@ -812,6 +879,7 @@ const App = () => {
                 styles={styles}
                 displayMode={liveDisplayMode}
                 imageSrc={liveImageSrc}
+                imageFit={liveImageFit}
               />
           </div>
         </div>
@@ -822,6 +890,7 @@ const App = () => {
             onClose={() => setIsSettingsOpen(false)}
             fonts={INITIAL_FONTS}
             currentDisplayMode={displayMode}
+            isModerator={isModerator}
           />
         )}
       </>
@@ -842,6 +911,7 @@ const App = () => {
           styles={styles}
           displayMode={liveDisplayMode}
           imageSrc={liveImageSrc}
+          imageFit={liveImageFit}
         />
       </div>
     );
