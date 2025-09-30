@@ -5,13 +5,54 @@ import './index.css';
 
 const { useState, useEffect, useRef } = React;
 
-const INITIAL_PRESET_MESSAGES = [
+// --- Type Definitions ---
+type DisplayMode = 'timer' | 'message' | 'mixed' | 'image';
+type ImageFit = 'contain' | 'width';
+
+interface Styles {
+  backgroundColor: string;
+  fontFamily: string;
+  timer: {
+    color: string;
+    fontSizes: {
+      timer: number;
+      mixed: number;
+    };
+  };
+  message: {
+    color: string;
+    fontSize: number;
+  };
+  image: {
+    fit: ImageFit;
+  };
+}
+
+interface ImagePreset {
+  name: string;
+  dataUrl: string;
+  fit: ImageFit;
+}
+
+interface ConfigSettings {
+  styles: Styles;
+  presetMessages: string[];
+  imagePresets: ImagePreset[];
+}
+
+interface SavedConfig {
+  name: string;
+  settings: ConfigSettings;
+}
+
+// --- Initial Constants ---
+const INITIAL_PRESET_MESSAGES: string[] = [
   "5분 남았습니다 (5 mins left)",
   "마무리 부탁드립니다 (Please wrap up)",
   "Q&A 시간입니다 (Q&A Time)",
 ];
 
-const INITIAL_FONTS = [
+const INITIAL_FONTS: string[] = [
   "Arial, sans-serif",
   "'Roboto Mono', monospace",
   "'Courier New', Courier, monospace",
@@ -20,7 +61,7 @@ const INITIAL_FONTS = [
 ];
 
 // --- Helper Functions ---
-const formatTime = (totalSeconds) => {
+const formatTime = (totalSeconds: number): string => {
   if (totalSeconds < 0) totalSeconds = 0;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -31,13 +72,22 @@ const formatTime = (totalSeconds) => {
 
 // --- Components ---
 
-const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMode, isModerator }) => {
-  const [localStyles, setLocalStyles] = useState(initialStyles);
+interface SettingsModalProps {
+    initialStyles: Styles;
+    onSave: (newStyles: Styles) => void;
+    onClose: () => void;
+    fonts: string[];
+    currentDisplayMode: DisplayMode;
+    isModerator: boolean;
+}
+
+const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMode, isModerator }: SettingsModalProps) => {
+  const [localStyles, setLocalStyles] = useState<Styles>(initialStyles);
   
   const REFERENCE_WIDTH = 1920; // Reference for px <=> vw conversion
 
   // Get current timer vw size for the active mode
-  const currentTimerVw = localStyles.timer.fontSizes[currentDisplayMode] || localStyles.timer.fontSizes.mixed;
+  const currentTimerVw = localStyles.timer.fontSizes[currentDisplayMode === 'timer' ? 'timer' : 'mixed'];
   
   const [pxValues, setPxValues] = useState({
     message: Math.round((initialStyles.message.fontSize / 100) * REFERENCE_WIDTH),
@@ -46,34 +96,40 @@ const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMo
 
   // Effect to sync px value if style changes from outside while modal is open (e.g. mode change)
   useEffect(() => {
-    const newTimerVw = localStyles.timer.fontSizes[currentDisplayMode] || localStyles.timer.fontSizes.mixed;
+    const newTimerVw = localStyles.timer.fontSizes[currentDisplayMode === 'timer' ? 'timer' : 'mixed'];
     setPxValues(prev => ({ ...prev, timer: Math.round((newTimerVw / 100) * REFERENCE_WIDTH) }));
   }, [currentDisplayMode, localStyles.timer.fontSizes]);
 
 
-  const handleStyleChange = (group, prop, value, isNested = true) => {
-    if (isNested) {
-        setLocalStyles(prev => ({ ...prev, [group]: { ...prev[group], [prop]: value } }));
+  const handleStyleChange = (group: keyof Styles | 'message' | 'timer' | 'image' | null, prop: string, value: string, isNested = true) => {
+    if (isNested && group) {
+        // FIX: Spread types may only be created from object types.
+        // The original code could attempt to spread properties that might be strings (like backgroundColor),
+        // causing a type error. This check ensures we only perform a nested update on properties that are objects.
+        if (group === 'timer' || group === 'message' || group === 'image') {
+            setLocalStyles(prev => ({ ...prev, [group]: { ...prev[group], [prop]: value } }));
+        }
     } else {
-        setLocalStyles(prev => ({ ...prev, [prop]: value }));
+        setLocalStyles(prev => ({ ...prev, [prop]: value } as Pick<Styles, keyof Styles>));
     }
   };
 
-  const handleTimerFontSizeChange = (vwValue) => {
+  const handleTimerFontSizeChange = (vwValue: number) => {
     // Only update the font size for the current display mode
+    const keyToUpdate = currentDisplayMode === 'timer' ? 'timer' : 'mixed';
     setLocalStyles(prev => ({
       ...prev,
       timer: {
         ...prev.timer,
         fontSizes: {
           ...prev.timer.fontSizes,
-          [currentDisplayMode]: vwValue,
+          [keyToUpdate]: vwValue,
         }
       }
     }));
   };
   
-  const handlePxInputChange = (group, pxStringValue) => {
+  const handlePxInputChange = (group: 'message' | 'timer', pxStringValue: string) => {
     setPxValues(prev => ({...prev, [group]: pxStringValue}));
 
     const parsedValue = parseInt(pxStringValue, 10);
@@ -82,17 +138,17 @@ const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMo
       if (group === 'timer') {
         handleTimerFontSizeChange(vwValue);
       } else {
-        handleStyleChange(group, 'fontSize', vwValue);
+        handleStyleChange('message', 'fontSize', `${vwValue}`);
       }
     }
   };
 
-  const handleSliderChange = (group, vwStringValue) => {
+  const handleSliderChange = (group: 'message' | 'timer', vwStringValue: string) => {
     const vwValue = parseFloat(vwStringValue);
     if (group === 'timer') {
       handleTimerFontSizeChange(vwValue);
     } else {
-      handleStyleChange(group, 'fontSize', vwValue);
+      handleStyleChange('message', 'fontSize', `${vwValue}`);
     }
     setPxValues(prev => ({...prev, [group]: Math.round((vwValue / 100) * REFERENCE_WIDTH)}));
   };
@@ -202,7 +258,32 @@ const SettingsModal = ({ initialStyles, onSave, onClose, fonts, currentDisplayMo
   );
 };
 
-const ConsolePanel = (props) => {
+
+interface ConsolePanelProps {
+    onSetTime: (minutes: number, seconds: number) => void;
+    onStartPause: () => void;
+    onReset: () => void;
+    onSendMessage: (message: string) => void;
+    onOpenSettings: () => void;
+    isRunning: boolean;
+    displayMode: DisplayMode;
+    onSetDisplayMode: (mode: DisplayMode) => void;
+    presetMessages: string[];
+    onAddPreset: (message: string) => void;
+    onDeletePreset: (index: number) => void;
+    onUpdatePreset: (index: number, message: string) => void;
+    onToggleBlink: () => void;
+    isBlinking: boolean;
+    onClearMessage: () => void;
+    isModerator: boolean;
+    imagePresets: ImagePreset[];
+    onAddImagePreset: (preset: ImagePreset) => void;
+    onDeleteImagePreset: (index: number) => void;
+    onSendImage: (dataUrl: string, fit: ImageFit) => void;
+    styles: Styles;
+}
+
+const ConsolePanel = (props: ConsolePanelProps) => {
   const {
       onSetTime, onStartPause, onReset, onSendMessage, onOpenSettings, isRunning,
       displayMode, onSetDisplayMode, presetMessages, onAddPreset, onDeletePreset, onUpdatePreset,
@@ -214,15 +295,15 @@ const ConsolePanel = (props) => {
   const [seconds, setSeconds] = useState(0);
   const [customMessage, setCustomMessage] = useState("");
   const [newPreset, setNewPreset] = useState("");
-  const [editingPresetIndex, setEditingPresetIndex] = useState(null);
+  const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
   const [editingPresetText, setEditingPresetText] = useState("");
 
   // Image upload state
-  const fileInputRef = useRef(null);
-  const [newImage, setNewImage] = useState({ dataUrl: null, file: null });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [newImage, setNewImage] = useState<{ dataUrl: string | null; file: File | null }>({ dataUrl: null, file: null });
   const [newImagePresetName, setNewImagePresetName] = useState("");
   const [selectedImagePresetIdx, setSelectedImagePresetIdx] = useState("");
-  const [imageFit, setImageFit] = useState(styles.image?.fit || 'contain');
+  const [imageFit, setImageFit] = useState<ImageFit>(styles.image?.fit || 'contain');
 
   useEffect(() => {
     if (styles.image?.fit) {
@@ -241,13 +322,13 @@ const ConsolePanel = (props) => {
       }
   };
 
-  const handleEditClick = (index, text) => {
+  const handleEditClick = (index: number, text: string) => {
     setEditingPresetIndex(index);
     setEditingPresetText(text);
   };
 
   const handleSaveEdit = () => {
-    if (editingPresetText.trim()) {
+    if (editingPresetText.trim() && editingPresetIndex !== null) {
         onUpdatePreset(editingPresetIndex, editingPresetText.trim());
     }
     setEditingPresetIndex(null);
@@ -259,13 +340,15 @@ const ConsolePanel = (props) => {
     setEditingPresetText("");
   };
 
-  const handleFileChange = (event) => {
-    const file = event.target.files[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
         const reader = new FileReader();
-        reader.onload = (e) => {
-            setNewImage({ dataUrl: e.target.result, file: file });
-            setNewImagePresetName(file.name.split('.').slice(0, -1).join('.'));
+        reader.onload = (e: ProgressEvent<FileReader>) => {
+            if (e.target?.result && typeof e.target.result === 'string') {
+              setNewImage({ dataUrl: e.target.result, file: file });
+              setNewImagePresetName(file.name.split('.').slice(0, -1).join('.'));
+            }
         };
         reader.readAsDataURL(file);
     }
@@ -283,7 +366,7 @@ const ConsolePanel = (props) => {
   
   const handleSendToPreviewClick = () => {
     if (newImage.dataUrl && newImagePresetName.trim()) {
-        const newPreset = { name: newImagePresetName.trim(), dataUrl: newImage.dataUrl, fit: imageFit };
+        const newPreset: ImagePreset = { name: newImagePresetName.trim(), dataUrl: newImage.dataUrl, fit: imageFit };
         onAddImagePreset(newPreset);
         onSendImage(newPreset.dataUrl, newPreset.fit);
         // Reset fields
@@ -329,7 +412,7 @@ const ConsolePanel = (props) => {
             <button
               key={mode.key}
               className={displayMode === mode.key ? 'active' : ''}
-              onClick={() => onSetDisplayMode(mode.key)}
+              onClick={() => onSetDisplayMode(mode.key as DisplayMode)}
               style={{flex:1}}
             >
               {mode.label}
@@ -348,9 +431,9 @@ const ConsolePanel = (props) => {
                     <textarea 
                         value={editingPresetText}
                         onChange={(e) => setEditingPresetText(e.target.value)}
-                        rows="2"
+                        rows={2}
                         autoFocus
-                        onKeyDown={(e) => {
+                        onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
                           if (e.key === 'Enter' && !e.altKey) {
                             e.preventDefault();
                             handleSaveEdit();
@@ -375,8 +458,8 @@ const ConsolePanel = (props) => {
             value={newPreset} 
             onChange={(e) => setNewPreset(e.target.value)} 
             placeholder="새 프리셋 (Enter로 추가, Alt+Enter 줄바꿈)"
-            rows="2"
-            onKeyDown={(e) => {
+            rows={2}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
               if (e.key === 'Enter' && !e.altKey) {
                 e.preventDefault();
                 handleAddPresetClick();
@@ -390,8 +473,8 @@ const ConsolePanel = (props) => {
             value={customMessage} 
             onChange={(e) => setCustomMessage(e.target.value)} 
             placeholder="직접 메시지 입력 (Enter로 전송, Alt+Enter 줄바꿈)" 
-            rows="2"
-            onKeyDown={(e) => {
+            rows={2}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
               if (e.key === 'Enter' && !e.altKey) {
                 e.preventDefault();
                 if (customMessage.trim()) {
@@ -417,7 +500,7 @@ const ConsolePanel = (props) => {
             <div className="input-row" style={{marginBottom: "10px"}}>
               <select
                 value={selectedImagePresetIdx}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                     const idxString = e.target.value;
                     setSelectedImagePresetIdx(idxString);
                     if (idxString !== "") {
@@ -445,7 +528,7 @@ const ConsolePanel = (props) => {
             </div>
             
             <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} style={{display: 'none'}} />
-            <button onClick={() => fileInputRef.current.click()}>이미지 선택</button>
+            <button onClick={() => fileInputRef.current?.click()}>이미지 선택</button>
             
             {newImage.dataUrl && (
                 <div className="image-upload-area">
@@ -457,11 +540,11 @@ const ConsolePanel = (props) => {
                       <label>이미지 맞춤</label>
                       <div className="image-fit-options">
                         <label>
-                          <input type="radio" name="imageFit" value="contain" checked={imageFit === 'contain'} onChange={(e) => setImageFit(e.target.value)} />
+                          <input type="radio" name="imageFit" value="contain" checked={imageFit === 'contain'} onChange={(e) => setImageFit(e.target.value as ImageFit)} />
                           <span>한 화면에 보이기</span>
                         </label>
                         <label>
-                          <input type="radio" name="imageFit" value="width" checked={imageFit === 'width'} onChange={(e) => setImageFit(e.target.value)} />
+                          <input type="radio" name="imageFit" value="width" checked={imageFit === 'width'} onChange={(e) => setImageFit(e.target.value as ImageFit)} />
                           <span>가로 폭 맞춤</span>
                         </label>
                       </div>
@@ -479,7 +562,18 @@ const ConsolePanel = (props) => {
   );
 };
 
-const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displayMode, imageSrc, imageFit }) => {
+interface SpeakerPanelProps {
+    title: string;
+    timeRemaining: number;
+    message: string;
+    isBlinking: boolean;
+    styles: Styles;
+    displayMode: DisplayMode;
+    imageSrc: string;
+    imageFit: ImageFit;
+}
+
+const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displayMode, imageSrc, imageFit }: SpeakerPanelProps) => {
     const showTimer = displayMode === 'timer' || displayMode === 'mixed';
     const showMessage = (displayMode === 'message' || displayMode === 'mixed') && message;
     const showImage = displayMode === 'image' && imageSrc;
@@ -499,7 +593,7 @@ const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displ
 
     const panelContent = () => {
         if (showImage) {
-             const imageStyle = {
+             const imageStyle: React.CSSProperties = {
                 width: '100%',
                 height: isScrollableImage ? 'auto' : '100%',
                 objectFit: isScrollableImage ? 'initial' : 'contain',
@@ -539,7 +633,15 @@ const SpeakerPanel = ({ title, timeRemaining, message, isBlinking, styles, displ
 };
 
 
-const SelectionScreen = ({ onSelect, savedConfigs, onSave, onLoad, onDelete }) => {
+interface SelectionScreenProps {
+    onSelect: (view: View) => void;
+    savedConfigs: SavedConfig[];
+    onSave: (name: string) => void;
+    onLoad: (name: string) => void;
+    onDelete: (name: string) => void;
+}
+
+const SelectionScreen = ({ onSelect, savedConfigs, onSave, onLoad, onDelete }: SelectionScreenProps) => {
   const [configName, setConfigName] = useState("");
   const [selectedConfig, setSelectedConfig] = useState("");
 
@@ -629,14 +731,16 @@ const SelectionScreen = ({ onSelect, savedConfigs, onSave, onLoad, onDelete }) =
 
 // --- Main App Component ---
 
+type View = 'selection' | 'moderator_console' | 'moderator_screen' | 'speaker_console' | 'speaker_screen';
+
 const App = () => {
   const STORAGE_KEY = 'mnc-communicator-configs';
 
   // View State
-  const [view, setView] = useState('selection'); // 'selection', 'moderator_console', 'moderator_screen', 'speaker_console', 'speaker_screen'
+  const [view, setView] = useState<View>('selection'); 
 
   // Settings State
-  const [savedConfigs, setSavedConfigs] = useState(() => {
+  const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>(() => {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         return saved ? JSON.parse(saved) : [];
@@ -652,23 +756,23 @@ const App = () => {
   const [isRunning, setIsRunning] = useState(false);
   
   // Preview State
-  const [displayMode, setDisplayMode] = useState('timer');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('timer');
   const [message, setMessage] = useState('');
   const [isBlinking, setIsBlinking] = useState(false);
   const [imageSrc, setImageSrc] = useState('');
-  const [imageFit, setImageFit] = useState('contain');
+  const [imageFit, setImageFit] = useState<ImageFit>('contain');
   
   // Live State
-  const [liveDisplayMode, setLiveDisplayMode] = useState('timer');
+  const [liveDisplayMode, setLiveDisplayMode] = useState<DisplayMode>('timer');
   const [liveMessage, setLiveMessage] = useState('');
   const [liveIsBlinking, setLiveIsBlinking] = useState(false);
   const [liveImageSrc, setLiveImageSrc] = useState('');
-  const [liveImageFit, setLiveImageFit] = useState('contain');
+  const [liveImageFit, setLiveImageFit] = useState<ImageFit>('contain');
 
   // Common State
-  const [presetMessages, setPresetMessages] = useState(INITIAL_PRESET_MESSAGES);
-  const [imagePresets, setImagePresets] = useState([]);
-  const [styles, setStyles] = useState({
+  const [presetMessages, setPresetMessages] = useState<string[]>(INITIAL_PRESET_MESSAGES);
+  const [imagePresets, setImagePresets] = useState<ImagePreset[]>([]);
+  const [styles, setStyles] = useState<Styles>({
     backgroundColor: '#000000',
     fontFamily: "Arial, sans-serif",
     timer: {
@@ -694,7 +798,7 @@ const App = () => {
 
 
   useEffect(() => {
-    let interval;
+    let interval: number | undefined;
     if (isRunning && timeRemaining > 0) {
       interval = setInterval(() => {
         setTimeRemaining(prev => prev - 1);
@@ -708,7 +812,7 @@ const App = () => {
     return () => clearInterval(interval);
   }, [isRunning, timeRemaining]);
   
-  const handleSetTime = (minutes, seconds) => {
+  const handleSetTime = (minutes: number, seconds: number) => {
     const newTime = (minutes * 60) + seconds;
     setInitialTime(newTime);
     setTimeRemaining(newTime);
@@ -733,11 +837,11 @@ const App = () => {
     setDisplayMode('timer');
   };
 
-  const handleSendMessage = (msg) => {
+  const handleSendMessage = (msg: string) => {
       setMessage(msg);
       setDisplayMode(displayMode === 'timer' ? 'message' : displayMode);
   };
-  const handleSendImage = (dataUrl, fit = 'contain') => {
+  const handleSendImage = (dataUrl: string, fit: ImageFit = 'contain') => {
       setImageSrc(dataUrl);
       setImageFit(fit);
       setDisplayMode('image');
@@ -748,9 +852,9 @@ const App = () => {
     setImageSrc('');
   };
   
-  const handleAddPreset = (msg) => setPresetMessages(prev => [...prev, msg]);
-  const handleDeletePreset = (index) => setPresetMessages(prev => prev.filter((_, i) => i !== index));
-  const handleUpdatePreset = (index, newMessage) => {
+  const handleAddPreset = (msg: string) => setPresetMessages(prev => [...prev, msg]);
+  const handleDeletePreset = (index: number) => setPresetMessages(prev => prev.filter((_, i) => i !== index));
+  const handleUpdatePreset = (index: number, newMessage: string) => {
     setPresetMessages(prev => {
         const newPresets = [...prev];
         newPresets[index] = newMessage;
@@ -758,10 +862,10 @@ const App = () => {
     });
   };
 
-  const handleAddImagePreset = (preset) => setImagePresets(prev => [...prev, preset]);
-  const handleDeleteImagePreset = (index) => setImagePresets(prev => prev.filter((_, i) => i !== index));
+  const handleAddImagePreset = (preset: ImagePreset) => setImagePresets(prev => [...prev, preset]);
+  const handleDeleteImagePreset = (index: number) => setImagePresets(prev => prev.filter((_, i) => i !== index));
   
-  const handleSaveSettings = (newStyles) => setStyles(newStyles);
+  const handleSaveSettings = (newStyles: Styles) => setStyles(newStyles);
   
   const handleBroadcast = () => {
     setLiveDisplayMode(displayMode);
@@ -774,8 +878,8 @@ const App = () => {
   const handleBackToSelection = () => setView('selection');
   
   // --- Config Management Handlers ---
-  const handleSaveConfig = (name) => {
-    const currentSettings = { styles, presetMessages, imagePresets };
+  const handleSaveConfig = (name: string) => {
+    const currentSettings: ConfigSettings = { styles, presetMessages, imagePresets };
     const existingConfigIndex = savedConfigs.findIndex(c => c.name === name);
 
     if (existingConfigIndex > -1) {
@@ -791,11 +895,11 @@ const App = () => {
     }
   };
 
-  const handleLoadConfig = (name) => {
+  const handleLoadConfig = (name: string) => {
     const configToLoad = savedConfigs.find(c => c.name === name);
     if (configToLoad) {
         // Ensure backward compatibility with old configs
-        const loadedStyles = {
+        const loadedStyles: Styles = {
             ...styles,
             ...configToLoad.settings.styles,
             image: { ...styles.image, ...configToLoad.settings.styles?.image },
@@ -806,7 +910,7 @@ const App = () => {
     }
   };
 
-  const handleDeleteConfig = (name) => {
+  const handleDeleteConfig = (name: string) => {
     setSavedConfigs(prev => prev.filter(c => c.name !== name));
   };
 
@@ -928,5 +1032,8 @@ const App = () => {
          />;
 };
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+const container = document.getElementById('root');
+if (container) {
+  const root = ReactDOM.createRoot(container);
+  root.render(<App />);
+}
